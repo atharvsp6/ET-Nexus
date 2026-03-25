@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 
 const personaMeta = {
+  general: {
+    icon: Newspaper,
+    greeting: "General Briefing",
+    subtitle: "A cross-persona stream of markets, startups, technology, and education updates.",
+  },
   investor: {
     icon: TrendingUp,
     greeting: "Market Intelligence",

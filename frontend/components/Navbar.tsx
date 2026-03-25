@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 const personas = [
+  { key: "general" as const, label: "General", icon: Globe },
   { key: "investor" as const, label: "Investor", icon: TrendingUp },
   { key: "founder" as const, label: "Founder", icon: Briefcase },
   { key: "student" as const, label: "Student", icon: GraduationCap },

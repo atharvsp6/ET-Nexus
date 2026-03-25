@@ -3,6 +3,8 @@
  * Communicates with the FastAPI backend.
  */
 
+import type { Persona } from "@/lib/context";
+
 const API_BASE = "http://localhost:8000";
 
 // ─── Types ───
@@ -123,7 +125,7 @@ export interface NavigatorResponse {
 
 // ─── API Functions ───
 
-export async function fetchFeed(persona: string): Promise<FeedResponse> {
+export async function fetchFeed(persona: Persona): Promise<FeedResponse> {
   const res = await fetch(`${API_BASE}/api/feed?persona=${persona}`);
   if (!res.ok) throw new Error(`Feed fetch failed: ${res.status}`);
   return res.json();

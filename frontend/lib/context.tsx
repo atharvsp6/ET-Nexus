@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 
-export type Persona = "investor" | "founder" | "student";
+export type Persona = "general" | "investor" | "founder" | "student";
 export type Language = "English" | "Hindi" | "Tamil" | "Telugu" | "Bengali";
 
 interface AppContextType {
@@ -15,7 +15,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [persona, setPersona] = useState<Persona>("investor");
+  const [persona, setPersona] = useState<Persona>("general");
   const [language, setLanguage] = useState<Language>("English");
 
   return (

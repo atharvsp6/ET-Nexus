@@ -6,9 +6,15 @@ FastAPI Backend with mock data and simulated AI endpoints.
 import asyncio
 import json
 import os
+import random
+import re
+import uuid
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+import feedparser
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from groq import Groq
 from pydantic import BaseModel
@@ -63,115 +69,234 @@ class NavigatorRequest(BaseModel):
     persona: str = "investor"
 
 # ─────────────────────────────────────────────
-# Mock Article Database
+# Live Article Ingestion
 # ─────────────────────────────────────────────
 
-MOCK_ARTICLES = {
-    "1": {
-        "id": "1",
-        "title": "Financial Contagion: How One Bank's Collapse Triggered a Global Sell-Off",
-        "summary": "A deep dive into cascading failures spreading from a single bank to global markets.",
-        "content": "A mid-tier European lender disclosed large real-estate losses, triggering rapid cross-market contagion. CDS spreads widened, equity indices fell, and algorithmic momentum exits amplified volatility.",
-        "author": "Priya Mehta",
-        "date": "2026-03-10",
-        "category": "Markets",
-        "tags": ["contagion", "banking", "risk", "systemic-risk"],
-        "sentiment": "negative",
-        "image_url": "/images/contagion.jpg",
-        "persona_relevance": ["investor", "student"],
-    },
-    "2": {
-        "id": "2",
-        "title": "Deep Learning Models Now Predict Earnings Surprises with 78% Accuracy",
-        "summary": "Transformer models are outperforming consensus earnings forecasts.",
-        "content": "A model combining SEC filings, transcript sentiment, and satellite data reported strong directional accuracy on earnings surprises and generated backtested alpha.",
-        "author": "James O'Sullivan",
-        "date": "2026-03-12",
-        "category": "AI & Finance",
-        "tags": ["deep-learning", "earnings", "quant", "transformers"],
-        "sentiment": "positive",
-        "image_url": "/images/deep-learning.jpg",
-        "persona_relevance": ["investor", "founder", "student"],
-    },
-    "3": {
-        "id": "3",
-        "title": "Algorithmic Trading Firms Face New SEC Scrutiny Over Flash-Crash Prevention",
-        "summary": "The SEC proposes mandatory kill-switch controls for HFT systems.",
-        "content": "Following a sharp futures anomaly and rebound, the SEC proposed guardrails for algorithmic trading, including mandatory circuit-breakers and tighter oversight.",
-        "author": "David Chen",
-        "date": "2026-03-15",
-        "category": "Regulation",
-        "tags": ["algorithmic-trading", "SEC", "regulation", "HFT"],
-        "sentiment": "neutral",
-        "image_url": "/images/algo-trading.jpg",
-        "persona_relevance": ["investor", "founder"],
-    },
-    "4": {
-        "id": "4",
-        "title": "India's UPI Processes 20 Billion Transactions in February — A Fintech Milestone",
-        "summary": "UPI sets a record and strengthens India's lead in real-time payments.",
-        "content": "Record UPI transaction volume highlights mature digital payments rails and opens opportunities in lending, analytics, and fraud detection layers.",
-        "author": "Ananya Kapoor",
-        "date": "2026-03-08",
-        "category": "Fintech",
-        "tags": ["UPI", "payments", "India", "fintech"],
-        "sentiment": "positive",
-        "image_url": "/images/upi.jpg",
-        "persona_relevance": ["founder", "student"],
-    },
-    "5": {
-        "id": "5",
-        "title": "The Rise of Synthetic Data in Quantitative Finance",
-        "summary": "Funds are using synthetic market paths to stress-test strategies.",
-        "content": "Quant firms are applying GANs and diffusion models to generate realistic synthetic data for tail-risk scenario testing and robustness analysis.",
-        "author": "Lena Fischer",
-        "date": "2026-03-18",
-        "category": "AI & Finance",
-        "tags": ["synthetic-data", "GANs", "quant", "risk-management"],
-        "sentiment": "positive",
-        "image_url": "/images/synthetic-data.jpg",
-        "persona_relevance": ["investor", "student"],
-    },
-    "6": {
-        "id": "6",
-        "title": "Venture Capital Funding Rebounds: Q1 2026 Sees $78B in Global Deals",
-        "summary": "VC activity rebounds with AI infrastructure and climate tech leading.",
-        "content": "Global VC funding rose strongly year-over-year, with larger rounds in AI infrastructure and stricter governance terms in new deals.",
-        "author": "Marcus Williams",
-        "date": "2026-03-20",
-        "category": "Venture Capital",
-        "tags": ["VC", "funding", "startups", "AI"],
-        "sentiment": "positive",
-        "image_url": "/images/vc-funding.jpg",
-        "persona_relevance": ["founder", "investor"],
-    },
-    "7": {
-        "id": "7",
-        "title": "Central Banks Explore AI-Driven Monetary Policy Simulations",
-        "summary": "Central banks pilot LLM-based agent simulations for policy testing.",
-        "content": "Multiple central banks are evaluating agent-based simulations to estimate policy impacts, with debate about model bias and robustness.",
-        "author": "Ravi Shankar",
-        "date": "2026-03-22",
-        "category": "Macro",
-        "tags": ["central-banks", "AI", "monetary-policy", "simulation"],
-        "sentiment": "neutral",
-        "image_url": "/images/central-bank-ai.jpg",
-        "persona_relevance": ["investor", "student"],
-    },
-    "8": {
-        "id": "8",
-        "title": "How a 22-Year-Old Built a $50M ARR Fintech from a College Dorm",
-        "summary": "An AI-native invoicing startup reaches rapid scale and unicorn valuation.",
-        "content": "The company automated accounts receivable with AI agents and scaled quickly through product-led efficiency and strong SMB adoption.",
-        "author": "Vikram Rao",
-        "date": "2026-03-24",
-        "category": "Startups",
-        "tags": ["fintech", "AI-agents", "SaaS", "unicorn"],
-        "sentiment": "positive",
-        "image_url": "/images/payloop.jpg",
-        "persona_relevance": ["founder", "student"],
-    },
+ARTICLES_DB = {}
+INGEST_LOCK = asyncio.Lock()
+ET_RSS_URLS = [
+    "https://economictimes.indiatimes.com/markets/rssfeeds/2146842.cms",
+    "https://economictimes.indiatimes.com/tech/rssfeeds/13352306.cms",
+    "https://b2b.economictimes.indiatimes.com/rss/startup",
+    "https://education.economictimes.indiatimes.com/rss/topstories",
+]
+_REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
+
+
+def _clean_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _extract_article_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    article_div = soup.find("div", class_="artText")
+    if article_div:
+        return _clean_text(article_div.get_text(" ", strip=True))
+
+    paragraphs = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
+    combined = " ".join([p for p in paragraphs if p])
+    return _clean_text(combined)
+
+
+def _entry_date(entry) -> str:
+    parsed = entry.get("published_parsed") or entry.get("updated_parsed")
+    if parsed:
+        return datetime(*parsed[:6]).strftime("%Y-%m-%d")
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _entry_tags(entry) -> list[str]:
+    tags = []
+    for tag in entry.get("tags", []):
+        term = getattr(tag, "term", None)
+        if term:
+            tags.append(str(term))
+    return tags
+
+
+def _infer_persona_from_text(text: str, title: str = "") -> str:
+    combined = f"{title} {text}".lower()
+
+    keyword_groups = {
+        "founder": [
+            "startup", "founder", "funding", "venture", "vc", "seed", "series a",
+            "series b", "valuation", "burn rate", "product", "saas", "entrepreneur",
+        ],
+        "student": [
+            "explainer", "what is", "guide", "basics", "learn", "education", "curriculum",
+            "beginner", "framework", "concept", "how to",
+        ],
+        "investor": [
+            "stock", "market", "sensex", "nifty", "earnings", "shares", "bond", "ipo",
+            "valuation", "portfolio", "inflation", "interest rate", "fed", "rbi",
+        ],
+    }
+
+    scores = {
+        persona: sum(combined.count(keyword) for keyword in keywords)
+        for persona, keywords in keyword_groups.items()
+    }
+    best_persona = max(scores, key=scores.get)
+    return best_persona if scores[best_persona] > 0 else "investor"
+
+
+def _fallback_article_meta(text: str, title: str = "") -> dict:
+    two_sentence_summary = _clean_text(text)[:320]
+    persona = _infer_persona_from_text(text, title)
+    return {
+        "persona": persona,
+        "sentiment": "neutral",
+        "summary": two_sentence_summary or "Market update from Economic Times.",
+    }
+
+
+async def _classify_article_with_groq(full_text: str, title: str) -> dict:
+    if not groq_client:
+        return _fallback_article_meta(full_text, title)
+
+    system_prompt = (
+        "You are an economic news analyst. Return ONLY raw JSON with exact keys: "
+        "persona, sentiment, summary. "
+        "Use these strict persona definitions: "
+        "investor: Focuses on stock markets, funding rounds, acquisitions, and macroeconomics. "
+        "founder: Focuses on startup growth, leadership, venture capital, and scaling businesses. "
+        "student: Focuses on artificial intelligence, machine learning, web development frameworks, tech upskilling, internships, and education policies. "
+        "persona must be one of investor|founder|student. "
+        "sentiment must be one of bullish|bearish|neutral. "
+        "summary must be one concise 2-sentence string. "
+        "No markdown, no extra text, no extra keys."
+    )
+
+    user_prompt = (
+        f"Title: {title}\n"
+        f"Article text:\n{full_text[:12000]}"
+    )
+
+    try:
+        completion = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        parsed = _extract_json_object(completion.choices[0].message.content or "")
+
+        persona = str(parsed.get("persona", "investor")).lower()
+        if persona not in {"investor", "founder", "student"}:
+            persona = "investor"
+
+        sentiment = str(parsed.get("sentiment", "neutral")).lower()
+        if sentiment not in {"bullish", "bearish", "neutral"}:
+            sentiment = "neutral"
+
+        summary = _clean_text(str(parsed.get("summary", "")))
+        if not summary:
+            summary = _fallback_article_meta(full_text, title)["summary"]
+
+        return {
+            "persona": persona,
+            "sentiment": sentiment,
+            "summary": summary,
+        }
+    except Exception:
+        return _fallback_article_meta(full_text, title)
+
+
+async def _ensure_articles_loaded() -> None:
+    if ARTICLES_DB:
+        return
+
+    async with INGEST_LOCK:
+        if ARTICLES_DB:
+            return
+        await ingest_live_news()
+
+
+async def ingest_live_news() -> dict:
+    entries = []
+    for rss_url in ET_RSS_URLS:
+        feed = await asyncio.to_thread(feedparser.parse, rss_url)
+        if hasattr(feed, "entries"):
+            entries.extend(feed.entries)
+
+    random.shuffle(entries)
+
+    valid_entries = []
+    for entry in entries:
+        title = _clean_text(entry.get("title", ""))
+        description = _clean_text(BeautifulSoup(entry.get("description", ""), "html.parser").get_text(" ", strip=True))
+        if not title:
+            continue
+        if "live updates" in title.lower():
+            continue
+        if not description:
+            continue
+        valid_entries.append(entry)
+        if len(valid_entries) >= 12:
+            break
+
+    sentiment_map = {
+        "bullish": "positive",
+        "bearish": "negative",
+        "neutral": "neutral",
+    }
+
+    ingested = {}
+    for entry in valid_entries:
+        link = entry.get("link", "")
+        if not link:
+            continue
+
+        try:
+            response = await asyncio.to_thread(requests.get, link, headers=_REQUEST_HEADERS, timeout=15)
+            response.raise_for_status()
+            full_text = _extract_article_text(response.text)
+        except Exception:
+            continue
+
+        if not full_text:
+            continue
+
+        title = _clean_text(entry.get("title", "Economic Times Market Update"))
+        llm_meta = await _classify_article_with_groq(full_text, title)
+
+        article_id = str(uuid.uuid4())
+        read_time = max(1, len(full_text.split()) // 220)
+        persona = llm_meta["persona"]
+        market_sentiment = llm_meta["sentiment"]
+
+        article = {
+            "id": article_id,
+            "title": title,
+            "summary": llm_meta["summary"],
+            "content": full_text,
+            "full_text": full_text,
+            "author": _clean_text(entry.get("author", "Economic Times")) or "Economic Times",
+            "date": _entry_date(entry),
+            "category": "Markets",
+            "tags": _entry_tags(entry) or ["markets"],
+            "sentiment": sentiment_map.get(market_sentiment, "neutral"),
+            "market_sentiment": market_sentiment,
+            "image_url": "",
+            "persona_relevance": [persona],
+            "source": "Economic Times",
+            "read_time": read_time,
+            "link": link,
+        }
+        ingested[article_id] = article
+
+    ARTICLES_DB.clear()
+    ARTICLES_DB.update(ingested)
+
+    return {
+        "ingested_count": len(ARTICLES_DB),
+        "article_ids": list(ARTICLES_DB.keys()),
+    }
 
 
 def _extract_json_object(raw_text: str) -> dict:
@@ -233,7 +358,7 @@ async def generate_briefing(article: dict) -> dict:
     user_prompt = (
         f"Article title: {article.get('title', '')}\n"
         f"Article summary: {article.get('summary', '')}\n"
-        f"Article content:\n{article.get('content', '')}"
+        f"Article content:\n{article.get('full_text') or article.get('content', '')}"
     )
 
     try:
@@ -273,7 +398,7 @@ async def generate_briefing(article: dict) -> dict:
 
 async def generate_chat_response(question: str, context_id: str) -> dict:
     """Answer a user question grounded strictly in the selected article text."""
-    article = MOCK_ARTICLES.get(context_id)
+    article = ARTICLES_DB.get(context_id)
     if not article:
         return {
             "response": "I could not find context for this article. Please open the article again and retry.",
@@ -292,7 +417,7 @@ async def generate_chat_response(question: str, context_id: str) -> dict:
     )
     user_prompt = (
         f"Article title: {context_title}\n"
-        f"Article text:\n{article.get('content', '')}\n\n"
+        f"Article text:\n{article.get('full_text') or article.get('content', '')}\n\n"
         f"User question: {question}"
     )
 
@@ -363,7 +488,8 @@ async def root():
         "version": "0.1.0",
         "status": "running",
         "endpoints": [
-            "GET  /api/feed?persona={investor|founder|student}",
+            "GET  /api/feed?persona={general|investor|founder|student}",
+            "POST /api/admin/ingest",
             "POST /api/briefing",
             "POST /api/chat",
             "POST /api/translate",
@@ -371,20 +497,52 @@ async def root():
     }
 
 
+@app.post("/api/admin/ingest")
+async def admin_ingest():
+    """Trigger live ET Markets ingestion and replace the in-memory articles DB."""
+    result = await ingest_live_news()
+    return {
+        "status": "ok",
+        **result,
+    }
+
+
+@app.on_event("startup")
+async def startup_ingest() -> None:
+    """Best-effort initial ingest so the first feed render is not empty."""
+    try:
+        await _ensure_articles_loaded()
+    except Exception:
+        # Keep startup resilient; feed endpoint retries lazy ingest.
+        pass
+
+
 @app.get("/api/feed")
-async def get_feed(persona: str = Query("investor", description="User persona: investor, founder, or student")):
+async def get_feed(persona: str = Query("general", description="User persona: general, investor, founder, or student")):
     """Return articles filtered by persona relevance."""
-    valid_personas = ["investor", "founder", "student"]
-    if persona.lower() not in valid_personas:
+    await _ensure_articles_loaded()
+
+    persona_normalized = persona.lower()
+    valid_personas = ["general", "investor", "founder", "student"]
+    if persona_normalized not in valid_personas:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid persona '{persona}'. Choose from: {valid_personas}",
         )
 
-    filtered = [
-        article for article in MOCK_ARTICLES.values()
-        if persona.lower() in article["persona_relevance"]
-    ]
+    if persona_normalized == "general":
+        filtered = list(ARTICLES_DB.values())
+    else:
+        filtered = [
+            article for article in ARTICLES_DB.values()
+            if persona_normalized in article.get("persona_relevance", [])
+        ]
+
+    filtered.sort(
+        key=lambda article: datetime.strptime(article.get("date", "1900-01-01"), "%Y-%m-%d")
+        if article.get("date") else datetime.min,
+        reverse=True,
+    )
 
     # Return a lightweight feed (no full content)
     feed = []
@@ -401,13 +559,13 @@ async def get_feed(persona: str = Query("investor", description="User persona: i
             "image_url": a["image_url"],
         })
 
-    return {"persona": persona, "count": len(feed), "articles": feed}
+    return {"persona": persona_normalized, "count": len(feed), "articles": feed}
 
 
 @app.get("/api/article/{article_id}")
 async def get_article(article_id: str):
     """Return full article by ID."""
-    article = MOCK_ARTICLES.get(article_id)
+    article = ARTICLES_DB.get(article_id)
     if not article:
         raise HTTPException(status_code=404, detail=f"Article '{article_id}' not found.")
     return article
@@ -416,7 +574,7 @@ async def get_article(article_id: str):
 @app.post("/api/briefing")
 async def get_briefing(request: BriefingRequest):
     """Generate an AI briefing (bullet summary + sentiment) for an article."""
-    article = MOCK_ARTICLES.get(request.article_id)
+    article = ARTICLES_DB.get(request.article_id)
     if not article:
         raise HTTPException(
             status_code=404,
@@ -440,7 +598,7 @@ async def get_briefing(request: BriefingRequest):
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     """Respond to a user question in the context of an article."""
-    article = MOCK_ARTICLES.get(request.context_id)
+    article = ARTICLES_DB.get(request.context_id)
     if not article:
         raise HTTPException(
             status_code=404,
@@ -472,7 +630,7 @@ async def generate_video(request: VideoRequest):
     Simulate AI video generation from an article.
     TODO: Replace with real video generation pipeline.
     """
-    article = MOCK_ARTICLES.get(request.article_id)
+    article = ARTICLES_DB.get(request.article_id)
     if not article:
         raise HTTPException(status_code=404, detail=f"Article '{request.article_id}' not found.")
 
@@ -727,7 +885,7 @@ async def news_navigator(request: NavigatorRequest):
 
     # Find related articles by keyword matching
     related = []
-    for article in MOCK_ARTICLES.values():
+    for article in ARTICLES_DB.values():
         title_lower = article["title"].lower()
         tags_lower = [t.lower() for t in article["tags"]]
         if any(kw in title_lower or kw in " ".join(tags_lower) for kw in topic_lower.split()):
@@ -737,7 +895,7 @@ async def news_navigator(request: NavigatorRequest):
 
     if not related:
         # Fallback: return all articles for the persona
-        related = [a for a in MOCK_ARTICLES.values() if request.persona in a["persona_relevance"]]
+        related = [a for a in ARTICLES_DB.values() if request.persona in a.get("persona_relevance", [])]
 
     return {
         "topic": request.topic,
