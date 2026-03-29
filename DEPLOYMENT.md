@@ -66,12 +66,16 @@ Defaults are usually correct:
 ### Required environment variable
 Set in Vercel Project Settings -> Environment Variables:
 
-- `NEXT_PUBLIC_API_BASE_URL` = your backend URL
+- `API_BASE_URL` = your backend URL
+
+Recommended optional public override:
+
+- `NEXT_PUBLIC_API_BASE_URL` = your backend URL (only needed if you want browser-side direct calls)
 
 Example:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.onrender.com
+API_BASE_URL=https://your-backend-domain.onrender.com
 ```
 
 Deploy and open your Vercel URL.
@@ -107,7 +111,7 @@ npm run start
 Set frontend env before start:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8000
 ```
 
 ## 5) Optional single-platform deploy with Docker

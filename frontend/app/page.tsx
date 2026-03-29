@@ -164,7 +164,7 @@ export default function Dashboard() {
           <AlertCircle size={20} />
           <div>
             <p className="text-sm font-semibold">Failed to load feed</p>
-            <p className="text-xs opacity-80">{error}. Make sure the backend is running on port 8000.</p>
+            <p className="text-xs opacity-80">{error}. Check that your backend is reachable and API base URL settings are correct.</p>
           </div>
         </div>
       )}

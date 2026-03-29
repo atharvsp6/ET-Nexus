@@ -5,7 +5,11 @@
 
 import type { Persona } from "@/lib/context";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
 
 // ─── Types ───
 
@@ -139,19 +143,19 @@ export interface NavigatorResponse {
 export async function fetchFeed(persona: Persona, refresh = false): Promise<FeedResponse> {
   const params = new URLSearchParams({ persona });
   if (refresh) params.set("refresh", "true");
-  const res = await fetch(`${API_BASE}/api/feed?${params.toString()}`);
+  const res = await fetch(apiUrl(`/api/feed?${params.toString()}`));
   if (!res.ok) throw new Error(`Feed fetch failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchArticle(id: string): Promise<Article> {
-  const res = await fetch(`${API_BASE}/api/article/${id}`);
+  const res = await fetch(apiUrl(`/api/article/${id}`));
   if (!res.ok) throw new Error(`Article fetch failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchBriefing(articleId: string): Promise<BriefingResponse> {
-  const res = await fetch(`${API_BASE}/api/briefing`, {
+  const res = await fetch(apiUrl(`/api/briefing`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ article_id: articleId }),
@@ -161,7 +165,7 @@ export async function fetchBriefing(articleId: string): Promise<BriefingResponse
 }
 
 export async function sendChat(question: string, contextId: string): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/api/chat`, {
+  const res = await fetch(apiUrl(`/api/chat`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, context_id: contextId }),
@@ -171,7 +175,7 @@ export async function sendChat(question: string, contextId: string): Promise<Cha
 }
 
 export async function translateText(text: string, targetLanguage: string): Promise<TranslateResponse> {
-  const res = await fetch(`${API_BASE}/api/translate`, {
+  const res = await fetch(apiUrl(`/api/translate`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, target_language: targetLanguage }),
@@ -181,7 +185,7 @@ export async function translateText(text: string, targetLanguage: string): Promi
 }
 
 export async function translateTexts(texts: string[], targetLanguage: string): Promise<BatchTranslateResponse> {
-  const res = await fetch(`${API_BASE}/api/translate/batch`, {
+  const res = await fetch(apiUrl(`/api/translate/batch`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ texts, target_language: targetLanguage }),
@@ -191,7 +195,7 @@ export async function translateTexts(texts: string[], targetLanguage: string): P
 }
 
 export async function generateVideo(articleId: string): Promise<VideoResponse> {
-  const res = await fetch(`${API_BASE}/api/video`, {
+  const res = await fetch(apiUrl(`/api/video`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ article_id: articleId }),
@@ -201,19 +205,19 @@ export async function generateVideo(articleId: string): Promise<VideoResponse> {
 }
 
 export async function fetchStoryArcs(persona: Persona): Promise<{ arcs: StoryArcSummary[] }> {
-  const res = await fetch(`${API_BASE}/api/story-arcs?persona=${persona}`);
+  const res = await fetch(apiUrl(`/api/story-arcs?persona=${persona}`));
   if (!res.ok) throw new Error(`Story arcs fetch failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchStoryArc(arcId: string, persona: Persona): Promise<StoryArc> {
-  const res = await fetch(`${API_BASE}/api/story-arc/${arcId}?persona=${persona}`);
+  const res = await fetch(apiUrl(`/api/story-arc/${arcId}?persona=${persona}`));
   if (!res.ok) throw new Error(`Story arc fetch failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchNavigator(topic: string, persona: string): Promise<NavigatorResponse> {
-  const res = await fetch(`${API_BASE}/api/navigator`, {
+  const res = await fetch(apiUrl(`/api/navigator`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ topic, persona }),
